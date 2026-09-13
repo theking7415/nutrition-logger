@@ -1,0 +1,4 @@
+<resources>
+    <!-- Same background as the phone app's launcher icon. -->
+    <color name="ic_launcher_background">#1B5E4A</color>
+</resources>

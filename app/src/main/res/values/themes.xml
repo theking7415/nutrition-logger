@@ -1,0 +1,5 @@
+<resources>
+    <!-- Parented off the platform theme so the app needs no Material Components
+         XML dependency; all real styling happens in Compose. -->
+    <style name="Theme.NutritionLogger" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

@@ -1,0 +1,13 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Same mark as the phone app: a droplet over a plate, water + food, crossing into Health Connect. -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,28 C46,40 40,47 40,54 a14,14 0 1,0 28,0 C68,47 62,40 54,28 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M32,74 h44 a4,4 0 0,1 -4,6 h-36 a4,4 0 0,1 -4,-6 Z" />
+</vector>

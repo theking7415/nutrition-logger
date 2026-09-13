@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-feature android:name="android.hardware.type.watch" />
+
+    <!-- No Health Connect permissions here: this module never writes to
+         Health Connect itself. It relays the amount to the phone over the
+         Wearable Data Layer API (see relay/PhoneRelayClient.kt), and the
+         phone app, which already holds WRITE_HYDRATION, does the actual
+         write. See CLAUDE.md, "The wear/watch integration", for why direct
+         on-watch writes were tried and abandoned. -->
+
+    <application
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@android:style/Theme.DeviceDefault">
+
+        <!-- Standalone Wear app: no paired-phone companion of the same
+             package is required to install/run this. -->
+        <meta-data
+            android:name="com.google.android.wearable.standalone"
+            android:value="true" />
+
+        <!-- Manual test screen: fires the same relay call the tile does,
+             without needing the tile pinned to a watch face. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Translucent, instantly-finishing activity: the only way a Wear
+             Tile's Clickable can trigger code, since Tiles support LaunchAction
+             (open an intent) or LoadAction (re-render the tile) and nothing
+             else. See tile/WaterTileService.kt. -->
+        <activity
+            android:name=".TrampolineActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true"
+            android:noHistory="true" />
+
+        <service
+            android:name=".tile.WaterTileService"
+            android:exported="true"
+            android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER">
+            <intent-filter>
+                <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />
+            </intent-filter>
+        </service>
+
+    </application>
+</manifest>
