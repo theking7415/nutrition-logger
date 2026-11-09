@@ -3,6 +3,9 @@
 
     <uses-feature android:name="android.hardware.type.watch" />
 
+    <!-- Haptic click on the tile-tap confirmation (TrampolineActivity). -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <!-- No Health Connect permissions here: this module never writes to
          Health Connect itself. It relays the amount to the phone over the
          Wearable Data Layer API (see relay/PhoneRelayClient.kt), and the
@@ -34,14 +37,15 @@
             </intent-filter>
         </activity>
 
-        <!-- Translucent, instantly-finishing activity: the only way a Wear
-             Tile's Clickable can trigger code, since Tiles support LaunchAction
-             (open an intent) or LoadAction (re-render the tile) and nothing
-             else. See tile/WaterTileService.kt. -->
+        <!-- Brief confirmation screen (pop animation + haptic): the only way a
+             Wear Tile's Clickable can trigger code, since Tiles support
+             LaunchAction (open an intent) or LoadAction (re-render the tile)
+             and nothing else. Finishes itself after about a second. See
+             tile/WaterTileService.kt. -->
         <activity
             android:name=".TrampolineActivity"
             android:exported="true"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
             android:excludeFromRecents="true"
             android:noHistory="true" />
 

@@ -77,13 +77,13 @@
                 android:resource="@xml/water_widget_info" />
         </receiver>
 
-        <!-- Receives water-log relays from the watch tile when direct
-             on-watch writes aren't available. See relay/PhoneRelayListenerService.kt. -->
+        <!-- Receives queued water logs from the watch (Data Layer items,
+             delivered whenever the phone is reachable). See relay/PhoneRelayListenerService.kt. -->
         <service
             android:name=".relay.PhoneRelayListenerService"
             android:exported="true">
             <intent-filter>
-                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
                 <action android:name="com.google.android.gms.wearable.BIND_LISTENER" />
                 <data android:scheme="wear" android:host="*" android:pathPrefix="/nutrilogger" />
             </intent-filter>

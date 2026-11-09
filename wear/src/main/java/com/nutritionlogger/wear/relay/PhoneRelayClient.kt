@@ -2,63 +2,34 @@ package com.nutritionlogger.wear.relay
 
 import android.content.Context
 import android.util.Log
-import com.google.android.gms.wearable.CapabilityClient
+import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
 import kotlinx.coroutines.tasks.await
+import java.util.UUID
 
 private const val TAG = "NutritionLogger.relay"
 
-/** Path shared with the phone's PhoneRelayListenerService -- keep these in sync. */
-const val LOG_WATER_PATH = "/nutrilogger/log-water"
+/** Prefix shared with the phone's PhoneRelayListenerService -- keep these in sync. */
+const val LOG_PREFIX = "/nutrilogger/log"
 
 /**
- * Sends a water amount to every connected phone over the Wearable Data Layer
- * API. This is the whole write path for the watch now -- see CLAUDE.md, "The
- * wear/watch integration", for why direct on-watch Health Connect writes were
- * tried (status 3, then status 1 on a newer library) and abandoned in favor
- * of this. Requires the phone app to be installed, permitted, and reachable;
- * that's an accepted limitation for a personal single-user setup, not
- * something to build delivery guarantees around.
+ * Queues a water log for the phone as a Data Layer item. Unlike a message,
+ * a data item is stored on the watch and synced whenever the phone is
+ * reachable, so a log made out of range is delivered later, with its
+ * original timestamp, with no queue or retry code of our own. The phone
+ * deletes the item after writing it to Health Connect (that is the ack).
+ * See CLAUDE.md, "The wear/watch integration", for why the watch relays
+ * instead of writing to Health Connect directly.
  *
- * Throws if there are no connected nodes, rather than silently returning --
- * a bare for-loop over an empty list looks identical to success to the
- * caller otherwise, which is exactly what happened the first time this ran:
- * the UI reported "relayed OK" with zero nodes actually reachable.
+ * Succeeds as soon as the item is stored locally; it does not mean the phone
+ * has processed it yet.
  */
 suspend fun relayLogWater(context: Context, volumeMl: Double) {
-    Log.e(TAG, "relayLogWater: starting for ${volumeMl}ml")
-
-    // Use CapabilityClient to find the phone app specifically.
-    val capabilityInfo = runCatching {
-        Wearable.getCapabilityClient(context)
-            .getCapability("nutrition_logger_phone", CapabilityClient.FILTER_REACHABLE)
-            .await()
-    }.getOrNull()
-
-    val nodes = capabilityInfo?.nodes ?: emptySet()
-    Log.e(TAG, "relayLogWater: found ${nodes.size} nodes with capability")
-
-    if (nodes.isEmpty()) {
-        // Fallback to all connected nodes if capability search failed/returned empty
-        Log.e(TAG, "relayLogWater: falling back to all connected nodes")
-        val allNodes = Wearable.getNodeClient(context).connectedNodes.await()
-        Log.e(TAG, "relayLogWater: found ${allNodes.size} total connected nodes")
-        if (allNodes.isEmpty()) {
-            throw IllegalStateException("No connected phone found")
-        }
-
-        val payload = volumeMl.toString().toByteArray(Charsets.UTF_8)
-        for (node in allNodes) {
-            Log.e(TAG, "relayLogWater: sending to all-node ${node.displayName} (${node.id})")
-            Wearable.getMessageClient(context).sendMessage(node.id, LOG_WATER_PATH, payload).await()
-            Log.e(TAG, "relayLogWater: send to all-node successful")
-        }
-    } else {
-        val payload = volumeMl.toString().toByteArray(Charsets.UTF_8)
-        for (node in nodes) {
-            Log.e(TAG, "relayLogWater: sending to capability-node ${node.displayName} (${node.id})")
-            Wearable.getMessageClient(context).sendMessage(node.id, LOG_WATER_PATH, payload).await()
-            Log.e(TAG, "relayLogWater: send to capability-node successful")
-        }
-    }
+    val id = UUID.randomUUID().toString()
+    val request = PutDataMapRequest.create("$LOG_PREFIX/$id").apply {
+        dataMap.putDouble("ml", volumeMl)
+        dataMap.putLong("ts", System.currentTimeMillis())
+    }.asPutDataRequest().setUrgent()
+    Wearable.getDataClient(context).putDataItem(request).await()
+    Log.e(TAG, "queued ${volumeMl}ml as $id")
 }

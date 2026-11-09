@@ -116,10 +116,17 @@ class HealthConnectManager(private val context: Context) {
      * aggregation produces the day total. Call this once per tap -- from the
      * in-app buttons, the home screen widget, or the watch tile.
      */
-    suspend fun logHydration(volumeMl: Double, at: Instant = Instant.now()) {
+    suspend fun logHydration(
+        volumeMl: Double,
+        at: Instant = Instant.now(),
+        // Callers replaying a queued watch event pass that event's own unique
+        // id so a redelivery upserts the same record instead of doubling it.
+        // Still one distinct id per drinking event, never shared across events.
+        clientId: String = UUID.randomUUID().toString(),
+    ) {
         val zone = ZoneId.systemDefault()
         val start = at.minusSeconds(1)
-        val id = "nutrilogger-hydration-${UUID.randomUUID()}"
+        val id = "nutrilogger-hydration-$clientId"
         client.insertRecords(listOf(
             HydrationRecord(
                 startTime = start,

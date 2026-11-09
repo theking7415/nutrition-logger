@@ -1,6 +1,8 @@
 package com.nutritionlogger.wear.tile
 
 import androidx.wear.protolayout.ActionBuilders
+import androidx.wear.protolayout.ColorBuilders
+import androidx.wear.protolayout.DimensionBuilders
 import androidx.wear.protolayout.LayoutElementBuilders
 import androidx.wear.protolayout.ModifiersBuilders
 import androidx.wear.protolayout.ResourceBuilders
@@ -10,9 +12,13 @@ import androidx.wear.tiles.TileBuilders
 import androidx.wear.tiles.TileService
 import androidx.concurrent.futures.CallbackToFutureAdapter
 import com.google.common.util.concurrent.ListenableFuture
+import android.net.Uri
+import com.google.android.gms.wearable.DataClient
+import com.google.android.gms.wearable.Wearable
 import com.nutritionlogger.wear.TrampolineActivity
+import com.nutritionlogger.wear.relay.LOG_PREFIX
 
-private const val RESOURCES_VERSION = "1"
+private const val RESOURCES_VERSION = "2"
 
 /**
  * Single-button tile: tap logs 250ml. A Tile's Clickable can only carry a
@@ -38,9 +44,22 @@ private const val RESOURCES_VERSION = "1"
  */
 class WaterTileService : TileService() {
 
+    /** Counts logs still queued on the watch (stored but not yet written by the phone). */
     override fun onTileRequest(
         requestParams: RequestBuilders.TileRequest
-    ): ListenableFuture<TileBuilders.Tile> {
+    ): ListenableFuture<TileBuilders.Tile> = CallbackToFutureAdapter.getFuture { completer ->
+        Wearable.getDataClient(this)
+            .getDataItems(Uri.parse("wear://*$LOG_PREFIX"), DataClient.FILTER_PREFIX)
+            .addOnSuccessListener { buffer ->
+                val pending = buffer.count
+                buffer.release()
+                completer.set(buildTile(pending))
+            }
+            .addOnFailureListener { completer.set(buildTile(0)) }
+        "onTileRequest"
+    }
+
+    private fun buildTile(pending: Int): TileBuilders.Tile {
         val clickable = ModifiersBuilders.Clickable.Builder()
             .setId("log_water")
             .setOnClick(
@@ -55,17 +74,80 @@ class WaterTileService : TileService() {
             )
             .build()
 
-        val layout = LayoutElementBuilders.Box.Builder()
+        val white = ColorBuilders.argb(0xFFFFFFFF.toInt())
+
+        // One big circular button, nearly the full tile, instead of a text
+        // band. The whole circle is the click target.
+        val button = LayoutElementBuilders.Box.Builder()
+            .setWidth(DimensionBuilders.dp(150f))
+            .setHeight(DimensionBuilders.dp(150f))
+            .setHorizontalAlignment(LayoutElementBuilders.HORIZONTAL_ALIGN_CENTER)
+            .setVerticalAlignment(LayoutElementBuilders.VERTICAL_ALIGN_CENTER)
             .setModifiers(
                 ModifiersBuilders.Modifiers.Builder()
+                    .setBackground(
+                        ModifiersBuilders.Background.Builder()
+                            .setColor(ColorBuilders.argb(0xFF1B8A68.toInt()))
+                            .setCorner(
+                                ModifiersBuilders.Corner.Builder()
+                                    .setRadius(DimensionBuilders.dp(75f))
+                                    .build()
+                            )
+                            .build()
+                    )
                     .setClickable(clickable)
                     .build()
             )
             .addContent(
-                LayoutElementBuilders.Text.Builder()
-                    .setText("💧 Log 250ml")
+                LayoutElementBuilders.Column.Builder()
+                    .setHorizontalAlignment(LayoutElementBuilders.HORIZONTAL_ALIGN_CENTER)
+                    .addContent(
+                        LayoutElementBuilders.Text.Builder()
+                            .setText("\uD83D\uDCA7")
+                            .setFontStyle(
+                                LayoutElementBuilders.FontStyle.Builder()
+                                    .setSize(DimensionBuilders.sp(48f))
+                                    .build()
+                            )
+                            .build()
+                    )
+                    .addContent(
+                        LayoutElementBuilders.Text.Builder()
+                            .setText("250 ml")
+                            .setFontStyle(
+                                LayoutElementBuilders.FontStyle.Builder()
+                                    .setSize(DimensionBuilders.sp(20f))
+                                    .setWeight(LayoutElementBuilders.FONT_WEIGHT_BOLD)
+                                    .setColor(white)
+                                    .build()
+                            )
+                            .build()
+                    )
+                    .also { column ->
+                        if (pending > 0) {
+                            column.addContent(
+                                LayoutElementBuilders.Text.Builder()
+                                    .setText("$pending waiting")
+                                    .setFontStyle(
+                                        LayoutElementBuilders.FontStyle.Builder()
+                                            .setSize(DimensionBuilders.sp(13f))
+                                            .setColor(ColorBuilders.argb(0xFFFFD27A.toInt()))
+                                            .build()
+                                    )
+                                    .build()
+                            )
+                        }
+                    }
                     .build()
             )
+            .build()
+
+        val layout = LayoutElementBuilders.Box.Builder()
+            .setWidth(DimensionBuilders.expand())
+            .setHeight(DimensionBuilders.expand())
+            .setHorizontalAlignment(LayoutElementBuilders.HORIZONTAL_ALIGN_CENTER)
+            .setVerticalAlignment(LayoutElementBuilders.VERTICAL_ALIGN_CENTER)
+            .addContent(button)
             .build()
 
         val tile = TileBuilders.Tile.Builder()
@@ -79,12 +161,11 @@ class WaterTileService : TileService() {
                     )
                     .build()
             )
+            // While logs are waiting, re-render every minute so the count clears
+            // once the phone has taken them.
+            .setFreshnessIntervalMillis(if (pending > 0) 60_000L else 0L)
             .build()
-
-        return CallbackToFutureAdapter.getFuture { completer ->
-            completer.set(tile)
-            "onTileRequest"
-        }
+        return tile
     }
 
     override fun onTileResourcesRequest(

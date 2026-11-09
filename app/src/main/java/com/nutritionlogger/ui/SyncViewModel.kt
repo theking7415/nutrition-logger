@@ -9,6 +9,8 @@ import com.nutritionlogger.health.DailyTotals
 import com.nutritionlogger.health.DaySnapshot
 import com.nutritionlogger.health.HealthConnectManager
 import com.nutritionlogger.ocr.ScreenshotParser
+import com.nutritionlogger.relay.PendingWatchLogs
+import com.nutritionlogger.widget.WaterWidgetState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -30,6 +32,7 @@ data class UiState(
     val ocrLines: List<String> = emptyList(),
     val busy: Boolean = false,
     val message: String? = null,
+    val messageOk: Boolean = false,
     val existing: DaySnapshot? = null,
 ) {
     val hasAnything: Boolean
@@ -54,7 +57,11 @@ class SyncViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val granted = runCatching { health.hasAllPermissions() }.getOrDefault(false)
             _state.update { it.copy(permissionsGranted = granted) }
-            if (granted) loadExisting()
+            if (granted) {
+                // Pick up any watch logs still queued from when the phone was out of reach.
+                runCatching { PendingWatchLogs.drain(getApplication()) }
+                loadExisting()
+            }
         }
     }
 
@@ -78,7 +85,7 @@ class SyncViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Jump straight to a date, e.g. from a date picker, rather than stepping day by day. */
     fun setDate(date: LocalDate) {
-        _state.update { it.copy(date = date, message = null) }
+        _state.update { it.copy(date = date, message = null, messageOk = false) }
         loadExisting()
         // Re-run OCR against the new date so the parsed record targets it.
         _state.value.imageUri?.let { loadImage(it) }
@@ -88,7 +95,7 @@ class SyncViewModel(app: Application) : AndroidViewModel(app) {
         _state.update {
             it.copy(
                 energy = "", protein = "", carbs = "", fat = "", fiber = "",
-                imageUri = null, ocrLines = emptyList(), message = null,
+                imageUri = null, ocrLines = emptyList(), message = null, messageOk = false,
             )
         }
     }
@@ -98,17 +105,18 @@ class SyncViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             runCatching { health.logHydration(ml) }
                 .onSuccess {
-                    _state.update { it.copy(message = "Logged ${ml.toInt()} ml of water.") }
+                    _state.update { it.copy(message = "Logged ${ml.toInt()} ml of water.", messageOk = true) }
+                    WaterWidgetState.logged(getApplication(), ml, flash = false)
                     loadExisting()
                 }
                 .onFailure { error ->
-                    _state.update { it.copy(message = "Water log failed: ${error.message}") }
+                    _state.update { it.copy(message = "Water log failed: ${error.message}", messageOk = false) }
                 }
         }
     }
 
     fun loadImage(uri: Uri) {
-        _state.update { it.copy(busy = true, imageUri = uri, message = null) }
+        _state.update { it.copy(busy = true, imageUri = uri, message = null, messageOk = false) }
         viewModelScope.launch {
             val result = runCatching {
                 ScreenshotParser.parse(getApplication(), uri, _state.value.date)
@@ -149,16 +157,23 @@ class SyncViewModel(app: Application) : AndroidViewModel(app) {
             fatG = s.fat.toValue(),
             fiberG = s.fiber.toValue(),
         )
-        _state.update { it.copy(busy = true, message = null) }
+        _state.update { it.copy(busy = true, message = null, messageOk = false) }
         viewModelScope.launch {
             runCatching { health.writeDay(totals) }
                 .onSuccess { summary ->
-                    _state.update { it.copy(busy = false, message = summary) }
+                    // Submitted: empty the form so the same values can't be re-sent by accident.
+                    _state.update {
+                        it.copy(
+                            busy = false, message = summary, messageOk = true,
+                            energy = "", protein = "", carbs = "", fat = "", fiber = "",
+                            imageUri = null, ocrLines = emptyList(),
+                        )
+                    }
                     loadExisting()
                 }
                 .onFailure { error ->
                     _state.update {
-                        it.copy(busy = false, message = "Write failed: ${error.message}")
+                        it.copy(busy = false, message = "Write failed: ${error.message}", messageOk = false)
                     }
                 }
         }
@@ -174,7 +189,13 @@ class SyncViewModel(app: Application) : AndroidViewModel(app) {
         val date = _state.value.date
         viewModelScope.launch {
             runCatching { health.readDay(date) }
-                .onSuccess { snapshot -> _state.update { it.copy(existing = snapshot) } }
+                .onSuccess { snapshot ->
+                    _state.update { it.copy(existing = snapshot) }
+                    // Keep the widget's running total anchored to Health Connect's real figure.
+                    if (date == LocalDate.now()) {
+                        WaterWidgetState.syncTotal(getApplication(), snapshot.waterMl ?: 0.0)
+                    }
+                }
                 .onFailure { _state.update { it.copy(existing = null) } }
         }
     }
